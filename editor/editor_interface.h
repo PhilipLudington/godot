@@ -41,6 +41,7 @@ class CreateDialog;
 class EditorCommandPalette;
 class EditorFileSystem;
 class EditorInspector;
+class EditorLog;
 class EditorPaths;
 class EditorPlugin;
 class EditorResourcePreview;
@@ -103,6 +104,7 @@ public:
 
 	EditorCommandPalette *get_command_palette() const;
 	EditorFileSystem *get_resource_file_system() const;
+	EditorLog *get_editor_log() const;
 	EditorPaths *get_editor_paths() const;
 	EditorResourcePreview *get_resource_previewer() const;
 	EditorSelection *get_selection() const;

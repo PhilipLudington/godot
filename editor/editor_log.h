@@ -178,6 +178,9 @@ private:
 protected:
 	void _notification(int p_what);
 
+protected:
+	static void _bind_methods();
+
 public:
 	void add_message(const String &p_msg, MessageType p_type = MSG_TYPE_STD);
 	void set_tool_button(Button *p_tool_button);
@@ -185,6 +188,12 @@ public:
 	void deinit();
 
 	void clear();
+
+	// API methods for plugin access
+	void dump_messages_to_file(const String &p_path) const;
+	TypedArray<Dictionary> get_all_messages() const;
+	int get_error_count() const;
+	int get_warning_count() const;
 
 	EditorLog();
 	~EditorLog();

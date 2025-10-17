@@ -30,8 +30,10 @@
 
 #include "editor_log.h"
 
+#include "core/io/json.h"
 #include "core/object/undo_redo.h"
 #include "core/os/keyboard.h"
+#include "core/os/os.h"
 #include "core/version.h"
 #include "editor/editor_node.h"
 #include "editor/editor_paths.h"
@@ -558,6 +560,93 @@ EditorLog::EditorLog() {
 
 void EditorLog::deinit() {
 	remove_error_handler(&eh);
+}
+
+void EditorLog::dump_messages_to_file(const String &p_path) const {
+	Ref<FileAccess> f = FileAccess::open(p_path, FileAccess::WRITE);
+	ERR_FAIL_COND_MSG(f.is_null(), "Cannot open file for writing: " + p_path);
+
+	for (const LogMessage &msg : messages) {
+		Dictionary d;
+		String type_str;
+		switch (msg.type) {
+			case MSG_TYPE_ERROR:
+				type_str = "ERROR";
+				break;
+			case MSG_TYPE_WARNING:
+				type_str = "WARNING";
+				break;
+			case MSG_TYPE_EDITOR:
+				type_str = "EDITOR";
+				break;
+			default:
+				type_str = "INFO";
+				break;
+		}
+		d["type"] = type_str;
+		d["text"] = msg.text;
+		d["count"] = msg.count;
+		d["timestamp"] = OS::get_singleton()->get_ticks_msec();
+
+		String json_line = JSON::stringify(d);
+		f->store_line(json_line);
+	}
+}
+
+TypedArray<Dictionary> EditorLog::get_all_messages() const {
+	TypedArray<Dictionary> result;
+
+	for (const LogMessage &msg : messages) {
+		Dictionary d;
+		String type_str;
+		switch (msg.type) {
+			case MSG_TYPE_ERROR:
+				type_str = "ERROR";
+				break;
+			case MSG_TYPE_WARNING:
+				type_str = "WARNING";
+				break;
+			case MSG_TYPE_EDITOR:
+				type_str = "EDITOR";
+				break;
+			default:
+				type_str = "INFO";
+				break;
+		}
+		d["type"] = type_str;
+		d["text"] = msg.text;
+		d["count"] = msg.count;
+		result.append(d);
+	}
+
+	return result;
+}
+
+int EditorLog::get_error_count() const {
+	LogFilter *error_filter = type_filter_map.get(MSG_TYPE_ERROR);
+	if (error_filter) {
+		return error_filter->get_message_count();
+	}
+	return 0;
+}
+
+int EditorLog::get_warning_count() const {
+	LogFilter *warning_filter = type_filter_map.get(MSG_TYPE_WARNING);
+	if (warning_filter) {
+		return warning_filter->get_message_count();
+	}
+	return 0;
+}
+
+void EditorLog::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("dump_messages_to_file", "path"), &EditorLog::dump_messages_to_file);
+	ClassDB::bind_method(D_METHOD("get_all_messages"), &EditorLog::get_all_messages);
+	ClassDB::bind_method(D_METHOD("get_error_count"), &EditorLog::get_error_count);
+	ClassDB::bind_method(D_METHOD("get_warning_count"), &EditorLog::get_warning_count);
+	ClassDB::bind_method(D_METHOD("clear"), &EditorLog::clear);
+
+	ADD_SIGNAL(MethodInfo("message_added",
+		PropertyInfo(Variant::DICTIONARY, "message")));
 }
 
 EditorLog::~EditorLog() {
