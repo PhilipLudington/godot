@@ -39,6 +39,7 @@
 class Control;
 class CreateDialog;
 class EditorCommandPalette;
+class EditorDebuggerNode;
 class EditorFileSystem;
 class EditorInspector;
 class EditorLog;
@@ -105,6 +106,7 @@ public:
 	EditorCommandPalette *get_command_palette() const;
 	EditorFileSystem *get_resource_file_system() const;
 	EditorLog *get_editor_log() const;
+	EditorDebuggerNode *get_debugger_node() const;
 	EditorPaths *get_editor_paths() const;
 	EditorResourcePreview *get_resource_previewer() const;
 	EditorSelection *get_selection() const;

@@ -1,0 +1,11 @@
+ea4bc82a6ad023ab7ee23ee620429895
+::res://::1760810893
+simple_warning_test.gd::GDScript/GDScript::9103042224057943518::1760806687::0::1::::<>Node<><>0<>0<><>::
+test_warnings_comprehensive.gd::GDScript/GDScript::8731469565305379818::1760806641::0::1::::<>Node<><>0<>0<><>::
+::res://addons/::1760810671
+::res://addons/warning_capture/::1760810863
+plugin.cfg::TextFile/TextFile::-1::1760806577::0::1::::<><><>0<>0<><>::
+plugin.gd::GDScript::1519615218163849634::1760810863::0::1::::<>EditorPlugin<><>0<>1<><>::
+plugin_with_module.gd::GDScript/GDScript::7375196466798146373::1760807040::0::1::::<>EditorPlugin<><>0<>1<><>::
+::res://diagnostics/::1760810809
+::res://test_project/::1760806566

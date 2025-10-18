@@ -321,6 +321,12 @@ public:
 	void send_message(const String &p_message, const Array &p_args);
 	void toggle_profiler(const String &p_profiler, bool p_enable, const Array &p_data);
 
+	// API for external access to debugger errors/warnings
+	TypedArray<Dictionary> get_all_errors() const;
+	void dump_errors_to_file(const String &p_file_path) const;
+	void clear_errors();
+	void add_error_from_script(const String &p_file, int p_line, const String &p_error, const String &p_message, bool p_warning);
+
 	ScriptEditorDebugger();
 	~ScriptEditorDebugger();
 };

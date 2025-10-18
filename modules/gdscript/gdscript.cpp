@@ -57,6 +57,8 @@
 #ifdef TOOLS_ENABLED
 #include "core/extension/gdextension_manager.h"
 #include "editor/editor_paths.h"
+#include "editor/editor_node.h"
+#include "editor/debugger/editor_debugger_node.h"
 #endif
 
 #include <stdint.h>
@@ -875,6 +877,22 @@ Error GDScript::reload(bool p_keep_state) {
 
 #ifdef DEBUG_ENABLED
 	for (const GDScriptWarning &warning : parser.get_warnings()) {
+#ifdef TOOLS_ENABLED
+		// In editor, send warnings even when not actively debugging
+		if (Engine::get_singleton()->is_editor_hint()) {
+			// Check if we can access the editor debugger
+			if (EditorNode::get_singleton() && EditorDebuggerNode::get_singleton()) {
+				// Send warning directly to the editor debugger
+				EditorDebuggerNode::get_singleton()->report_script_warning(
+					get_script_path(),
+					warning.start_line,
+					warning.get_name(),
+					warning.get_message()
+				);
+			}
+		}
+#endif
+		// Also send through normal debugger if active (for runtime)
 		if (EngineDebugger::is_active()) {
 			Vector<ScriptLanguage::StackInfo> si;
 			EngineDebugger::get_script_debugger()->send_error("", get_script_path(), warning.start_line, warning.get_name(), warning.get_message(), false, ERR_HANDLER_WARNING, si);

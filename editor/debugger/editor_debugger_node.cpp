@@ -208,6 +208,10 @@ void EditorDebuggerNode::_bind_methods() {
 	ClassDB::bind_method("live_debug_duplicate_node", &EditorDebuggerNode::live_debug_duplicate_node);
 	ClassDB::bind_method("live_debug_reparent_node", &EditorDebuggerNode::live_debug_reparent_node);
 
+	// Debugger access
+	ClassDB::bind_method(D_METHOD("get_current_debugger"), &EditorDebuggerNode::get_current_debugger);
+	ClassDB::bind_method(D_METHOD("get_default_debugger"), &EditorDebuggerNode::get_default_debugger);
+
 	ADD_SIGNAL(MethodInfo("goto_script_line"));
 	ADD_SIGNAL(MethodInfo("set_execution", PropertyInfo("script"), PropertyInfo(Variant::INT, "line")));
 	ADD_SIGNAL(MethodInfo("clear_execution", PropertyInfo("script")));
@@ -836,6 +840,14 @@ void EditorDebuggerNode::remove_debugger_plugin(const Ref<EditorDebuggerPlugin> 
 	ERR_FAIL_COND_MSG(!debugger_plugins.has(p_plugin), "Debugger plugin doesn't exists.");
 	debugger_plugins.erase(p_plugin);
 	Ref<EditorDebuggerPlugin>(p_plugin)->clear();
+}
+
+void EditorDebuggerNode::report_script_warning(const String &p_file, int p_line, const String &p_error, const String &p_message) {
+	// Send the warning to the default debugger (first tab)
+	ScriptEditorDebugger *default_debugger = get_default_debugger();
+	if (default_debugger) {
+		default_debugger->add_error_from_script(p_file, p_line, p_error, p_message, true);
+	}
 }
 
 bool EditorDebuggerNode::plugins_capture(ScriptEditorDebugger *p_debugger, const String &p_message, const Array &p_data) {

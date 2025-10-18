@@ -33,6 +33,8 @@
 #include "core/config/project_settings.h"
 #include "core/debugger/debugger_marshalls.h"
 #include "core/debugger/remote_debugger.h"
+#include "core/io/file_access.h"
+#include "core/io/json.h"
 #include "core/io/marshalls.h"
 #include "core/string/ustring.h"
 #include "core/version.h"
@@ -549,6 +551,7 @@ void ScriptEditorDebugger::_parse_message(const String &p_msg, uint64_t p_thread
 		bool source_is_project_file = oe.source_file.begins_with("res://");
 
 		// Metadata to highlight error line in scripts.
+		// Always populate metadata, even for non-project files (e.g., compiler warnings)
 		Array source_meta;
 		source_meta.push_back(oe.source_file);
 		source_meta.push_back(oe.source_line);
@@ -615,9 +618,8 @@ void ScriptEditorDebugger::_parse_message(const String &p_msg, uint64_t p_thread
 			cpp_cond->set_text(1, oe.error);
 			cpp_cond->set_text_alignment(0, HORIZONTAL_ALIGNMENT_LEFT);
 			tooltip += vformat(TTR("%s Error:"), source_language_name) + " " + oe.error + "\n";
-			if (source_is_project_file) {
-				cpp_cond->set_metadata(0, source_meta);
-			}
+			// Always set metadata, even for non-project files (e.g., compiler warnings)
+			cpp_cond->set_metadata(0, source_meta);
 		}
 		Vector<uint8_t> v;
 		v.resize(100);
@@ -639,8 +641,9 @@ void ScriptEditorDebugger::_parse_message(const String &p_msg, uint64_t p_thread
 		tooltip += vformat(TTR("%s Source:"), source_language_name) + " " + source_txt + "\n";
 
 		// Set metadata to highlight error line in scripts.
+		// Always set metadata, even for non-project files (e.g., compiler warnings)
+		error->set_metadata(0, source_meta);
 		if (source_is_project_file) {
-			error->set_metadata(0, source_meta);
 			cpp_source->set_metadata(0, source_meta);
 		}
 
@@ -1773,6 +1776,11 @@ void ScriptEditorDebugger::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("request_remote_object", "id"), &ScriptEditorDebugger::request_remote_object);
 	ClassDB::bind_method(D_METHOD("update_remote_object", "id", "property", "value"), &ScriptEditorDebugger::update_remote_object);
 
+	// API for external access to debugger errors/warnings
+	ClassDB::bind_method(D_METHOD("get_all_errors"), &ScriptEditorDebugger::get_all_errors);
+	ClassDB::bind_method(D_METHOD("dump_errors_to_file", "file_path"), &ScriptEditorDebugger::dump_errors_to_file);
+	ClassDB::bind_method(D_METHOD("clear_errors"), &ScriptEditorDebugger::clear_errors);
+
 	ADD_SIGNAL(MethodInfo("started"));
 	ADD_SIGNAL(MethodInfo("stopped"));
 	ADD_SIGNAL(MethodInfo("stop_requested"));
@@ -2172,6 +2180,179 @@ ScriptEditorDebugger::ScriptEditorDebugger() {
 	error_count = 0;
 	warning_count = 0;
 	_update_buttons_state();
+}
+
+TypedArray<Dictionary> ScriptEditorDebugger::get_all_errors() const {
+	TypedArray<Dictionary> errors_array;
+
+	if (error_tree && error_tree->get_root()) {
+		TreeItem *root = error_tree->get_root();
+		TreeItem *item = root->get_first_child();
+
+		while (item) {
+			Dictionary error_dict;
+
+			// Get time from column 0
+			error_dict["time"] = item->get_text(0);
+			// Get error message from column 1
+			error_dict["message"] = item->get_text(1);
+
+			// Check if it's a warning or error
+			bool is_warning = item->has_meta("_is_warning");
+			bool is_error = item->has_meta("_is_error");
+			error_dict["is_warning"] = is_warning;
+			error_dict["is_error"] = is_error;
+
+			// Get source metadata if available
+			Variant meta_value = item->get_metadata(0);
+			if (meta_value.get_type() == Variant::ARRAY) {
+				Array meta = meta_value;
+				if (meta.size() >= 2) {
+					error_dict["source_file"] = meta[0];
+					error_dict["source_line"] = meta[1];
+				}
+			}
+
+			// Get details from child items
+			TreeItem *child = item->get_first_child();
+			while (child) {
+				String child_label = child->get_text(0);
+				String child_text = child->get_text(1);
+
+				if (child_label.contains("Error")) {
+					error_dict["error_condition"] = child_text;
+				} else if (child_label.contains("Source")) {
+					error_dict["source_info"] = child_text;
+				} else if (child_label.contains("Stack Trace")) {
+					// Collect stack trace
+					Array stack_trace;
+					TreeItem *stack_item = child;
+					while (stack_item) {
+						Variant stack_meta_value = stack_item->get_metadata(0);
+						if (stack_meta_value.get_type() == Variant::ARRAY) {
+							Dictionary frame;
+							Array frame_meta = stack_meta_value;
+							if (frame_meta.size() >= 2) {
+								frame["file"] = frame_meta[0];
+								frame["line"] = frame_meta[1];
+							}
+							frame["text"] = stack_item->get_text(1);
+							stack_trace.append(frame);
+						}
+						stack_item = stack_item->get_next();
+						// Only process stack items that are siblings
+						if (stack_item && stack_item->get_parent() != item) {
+							break;
+						}
+					}
+					error_dict["stack_trace"] = stack_trace;
+				}
+
+				child = child->get_next();
+			}
+
+			errors_array.append(error_dict);
+			item = item->get_next();
+		}
+	}
+
+	return errors_array;
+}
+
+void ScriptEditorDebugger::dump_errors_to_file(const String &p_file_path) const {
+	Ref<FileAccess> file = FileAccess::open(p_file_path, FileAccess::WRITE);
+	if (file.is_null()) {
+		ERR_FAIL_MSG("Failed to open file for writing: " + p_file_path);
+		return;
+	}
+
+	TypedArray<Dictionary> errors = get_all_errors();
+
+	// Write as JSONL format (one JSON object per line)
+	for (int i = 0; i < errors.size(); i++) {
+		Dictionary error = errors[i];
+		String json_line = JSON::stringify(error);
+		file->store_line(json_line);
+	}
+
+	file->close();
+	print_line("Dumped " + itos(errors.size()) + " errors/warnings to " + p_file_path);
+}
+
+void ScriptEditorDebugger::clear_errors() {
+	_clear_errors_list();
+}
+
+void ScriptEditorDebugger::add_error_from_script(const String &p_file, int p_line, const String &p_error, const String &p_message, bool p_warning) {
+	// Create error structure similar to how runtime errors are handled
+	TreeItem *r = error_tree->get_root();
+	if (!r) {
+		r = error_tree->create_item();
+	}
+
+	// Get current time for the error entry
+	uint64_t time = OS::get_singleton()->get_ticks_msec();
+	int hr = time / 3600000;
+	int min = (time / 60000) % 60;
+	int sec = (time / 1000) % 60;
+	int msec = time % 1000;
+
+	Array time_vals;
+	time_vals.push_back(hr);
+	time_vals.push_back(min);
+	time_vals.push_back(sec);
+	time_vals.push_back(msec);
+	bool e;
+	String time_text = String("%d:%02d:%02d:%03d").sprintf(time_vals, &e);
+
+	// Create the main error item
+	TreeItem *error = error_tree->create_item(r);
+	error->set_collapsed(true);
+
+	// Set time in column 0
+	error->set_text(0, time_text);
+	error->set_text_alignment(0, HORIZONTAL_ALIGNMENT_LEFT);
+
+	// Set error message in column 1
+	String error_text = p_message;
+	if (!p_error.is_empty() && p_error != p_message) {
+		error_text = p_error + ": " + p_message;
+	}
+	error->set_text(1, error_text);
+	error->set_text_alignment(1, HORIZONTAL_ALIGNMENT_LEFT);
+
+	// Set metadata for file and line
+	Array source_meta;
+	source_meta.push_back(p_file);
+	source_meta.push_back(p_line);
+	error->set_metadata(0, source_meta);
+
+	// Set warning/error flags
+	if (p_warning) {
+		error->set_meta("_is_warning", true);
+		error->set_icon(0, get_editor_theme_icon(SNAME("Warning")));
+		error->set_custom_color(1, get_theme_color(SNAME("warning_color"), EditorStringName(Editor)));
+		error->set_custom_color(0, get_theme_color(SNAME("warning_color"), EditorStringName(Editor)));
+		warning_count++;
+	} else {
+		error->set_meta("_is_error", true);
+		error->set_icon(0, get_editor_theme_icon(SNAME("Error")));
+		error->set_custom_color(1, get_theme_color(SNAME("error_color"), EditorStringName(Editor)));
+		error->set_custom_color(0, get_theme_color(SNAME("error_color"), EditorStringName(Editor)));
+		error_count++;
+	}
+
+	// Add source file info as a child item
+	String source_txt = p_file + ":" + itos(p_line);
+	TreeItem *source_info = error_tree->create_item(error);
+	source_info->set_text(0, "<Source>");
+	source_info->set_text(1, source_txt);
+	source_info->set_text_alignment(0, HORIZONTAL_ALIGNMENT_LEFT);
+	source_info->set_metadata(0, source_meta);
+
+	// Update error/warning counts in the UI
+	emit_signal(SNAME("errors_cleared"));
+	emit_signal(SNAME("error_count_updated"));
 }
 
 ScriptEditorDebugger::~ScriptEditorDebugger() {
