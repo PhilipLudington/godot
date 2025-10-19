@@ -30,12 +30,19 @@ private:
 	TypedArray<Dictionary> _scan_all_gdscripts();
 	void _find_all_gdscript_files(const String &p_dir, Vector<String> &r_files);
 
+	// Debugger error capture (separate from warnings)
+	String debugger_file_path;
+	TypedArray<Dictionary> accumulated_debugger_errors;
+	void _write_debugger_file();
+	TypedArray<Dictionary> _get_debugger_errors() const;
+
 public:
 	TypedArray<Dictionary> get_all_warnings_and_errors() const;
 	void dump_errors_to_file(const String &p_file_path) const;
 	void clear_errors();
 	void add_warning(const Dictionary &p_warning);
 	void capture_debugger_warnings_now();  // Call this after scripts are loaded
+	void capture_debugger_errors_now();    // NEW: Capture debugger errors to debugger.json
 
 	WarningCaptureEditor();
 	~WarningCaptureEditor();

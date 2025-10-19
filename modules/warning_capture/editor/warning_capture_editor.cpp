@@ -17,23 +17,32 @@ void WarningCaptureEditor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("clear_errors"), &WarningCaptureEditor::clear_errors);
 	ClassDB::bind_method(D_METHOD("add_warning", "warning"), &WarningCaptureEditor::add_warning);
 	ClassDB::bind_method(D_METHOD("capture_debugger_warnings_now"), &WarningCaptureEditor::capture_debugger_warnings_now);
+	ClassDB::bind_method(D_METHOD("capture_debugger_errors_now"), &WarningCaptureEditor::capture_debugger_errors_now);
 }
 
 WarningCaptureEditor::WarningCaptureEditor() {
-	// Initialize warnings file path - will be set to godot/diagnostics/warnings.json
+	// Initialize file paths - both go to godot/diagnostics/
 	// Use ProjectSettings to get the project directory
 	String project_dir = ProjectSettings::get_singleton()->globalize_path("res://");
 	String diagnostics_dir = project_dir.path_join("diagnostics");
 	warnings_file_path = diagnostics_dir.path_join("warnings.json");
+	debugger_file_path = diagnostics_dir.path_join("debugger.json");
 
 	// Ensure diagnostics directory exists
 	DirAccess::make_dir_recursive_absolute(diagnostics_dir);
 
-	// Clear the file on startup (fresh session)
+	// Clear the warnings file on startup (fresh session)
 	Ref<FileAccess> file = FileAccess::open(warnings_file_path, FileAccess::WRITE);
 	if (file.is_valid()) {
 		file->store_string("{}");
 		file->close();
+	}
+
+	// Clear the debugger file on startup (fresh session)
+	Ref<FileAccess> debugger_file = FileAccess::open(debugger_file_path, FileAccess::WRITE);
+	if (debugger_file.is_valid()) {
+		debugger_file->store_string("{}");
+		debugger_file->close();
 	}
 
 	// Note: Can't capture debugger warnings here - they're not populated yet
@@ -576,4 +585,115 @@ TypedArray<Dictionary> WarningCaptureEditor::_scan_all_gdscripts() {
 
 	print_line("WarningCaptureEditor: Found " + itos(all_warnings.size()) + " warnings/errors from GDScript validation");
 	return all_warnings;
+}
+
+// NEW: Capture debugger errors to debugger.json (separate from warnings)
+void WarningCaptureEditor::capture_debugger_errors_now() {
+	print_line("WarningCaptureEditor: capture_debugger_errors_now() called");
+	accumulated_debugger_errors.clear();
+
+	// Get errors from the debugger (runtime errors, not compile warnings)
+	print_line("WarningCaptureEditor: Getting debugger errors...");
+	TypedArray<Dictionary> debugger_errors = _get_debugger_errors();
+	print_line("WarningCaptureEditor: Found " + itos(debugger_errors.size()) + " debugger errors");
+
+	for (int i = 0; i < debugger_errors.size(); i++) {
+		Dictionary categorized = _categorize_error(debugger_errors[i]);
+		accumulated_debugger_errors.append(categorized);
+	}
+
+	// Write to debugger.json
+	print_line("WarningCaptureEditor: Writing debugger file...");
+	_write_debugger_file();
+	print_line("WarningCaptureEditor: COMPLETE! Captured " + itos(accumulated_debugger_errors.size()) + " total debugger errors");
+}
+
+TypedArray<Dictionary> WarningCaptureEditor::_get_debugger_errors() const {
+	// Get ALL errors from ScriptEditorDebugger (runtime errors from the Debugger-Errors tab)
+	EditorDebuggerNode *debugger_node = EditorDebuggerNode::get_singleton();
+	if (!debugger_node) {
+		return TypedArray<Dictionary>();
+	}
+
+	ScriptEditorDebugger *default_debugger = debugger_node->get_default_debugger();
+	if (!default_debugger) {
+		return TypedArray<Dictionary>();
+	}
+
+	// Return ALL errors from debugger
+	return default_debugger->get_all_errors();
+}
+
+void WarningCaptureEditor::_write_debugger_file() {
+	if (debugger_file_path.is_empty()) {
+		return;
+	}
+
+	// Sort errors by severity then file/line
+	TypedArray<Dictionary> sorted_errors = accumulated_debugger_errors;
+
+	// Count by category
+	Dictionary by_severity;
+	Dictionary by_source;
+	Dictionary by_category;
+
+	for (int i = 0; i < sorted_errors.size(); i++) {
+		Dictionary error = sorted_errors[i];
+
+		String severity = error.get("severity", "unknown");
+		Variant current_sev = by_severity.get(severity, 0);
+		int sev_count = (int)current_sev;
+		by_severity[severity] = sev_count + 1;
+
+		String source = error.get("source", "unknown");
+		Variant current_src = by_source.get(source, 0);
+		int src_count = (int)current_src;
+		by_source[source] = src_count + 1;
+
+		String category = error.get("category", "unknown");
+		Variant current_cat = by_category.get(category, 0);
+		int cat_count = (int)current_cat;
+		by_category[category] = cat_count + 1;
+	}
+
+	// Add priorities
+	for (int i = 0; i < sorted_errors.size(); i++) {
+		Dictionary error = sorted_errors[i];
+		error["priority"] = i + 1;
+		sorted_errors[i] = error;
+	}
+
+	// Generate fix sequence
+	Array fix_sequence;
+	Variant err_var = by_severity.get("error", 0);
+	Variant warn_var = by_severity.get("warning", 0);
+	int error_count = (int)err_var;
+	int warning_count = (int)warn_var;
+	if (error_count > 0) {
+		fix_sequence.append(vformat("Fix %d error(s)", error_count));
+	}
+	if (warning_count > 0) {
+		fix_sequence.append(vformat("Fix %d warning(s)", warning_count));
+	}
+
+	// Build final report
+	Dictionary metadata;
+	metadata["generated_at"] = Time::get_singleton()->get_datetime_string_from_system();
+	metadata["project"] = "Stellar Throne";
+	metadata["total_issues"] = sorted_errors.size();
+	metadata["by_source"] = by_source;
+	metadata["by_severity"] = by_severity;
+	metadata["by_category"] = by_category;
+
+	Dictionary report;
+	report["metadata"] = metadata;
+	report["issues"] = sorted_errors;
+	report["fix_sequence"] = fix_sequence;
+
+	// Write to debugger.json file
+	Ref<FileAccess> file = FileAccess::open(debugger_file_path, FileAccess::WRITE);
+	if (file.is_valid()) {
+		file->store_string(JSON::stringify(report));
+		file->close();
+	}
 }
