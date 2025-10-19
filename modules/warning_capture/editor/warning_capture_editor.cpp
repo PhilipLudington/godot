@@ -428,6 +428,50 @@ void WarningCaptureEditor::_find_all_gdscript_files(const String &p_dir, Vector<
 	dir->list_dir_end();
 }
 
+// Comparator for sorting files by validation priority
+struct _ValidationPriorityComparator {
+	_FORCE_INLINE_ bool operator()(const String &a, const String &b) const {
+		// Get priority for each file (lower number = higher priority)
+		int priority_a = _get_priority(a);
+		int priority_b = _get_priority(b);
+
+		// Sort by priority first, then alphabetically within same priority
+		if (priority_a != priority_b) {
+			return priority_a < priority_b;
+		}
+		return a < b;
+	}
+
+	static int _get_priority(const String &path) {
+		// Priority 0: Core game code (scripts/, scenes/)
+		if (path.contains("/scripts/") || path.contains("/scenes/")) {
+			// Extra priority for autoloads and core systems
+			if (path.contains("/autoload/") || path.contains("/core/")) {
+				return 0;
+			}
+			return 1;
+		}
+
+		// Priority 2: Tools and utilities
+		if (path.contains("/tools/") || path.contains("/addons/")) {
+			return 2;
+		}
+
+		// Priority 3: Unit tests
+		if (path.contains("/test/unit/")) {
+			return 3;
+		}
+
+		// Priority 4: Integration tests (slowest, validated last)
+		if (path.contains("/test/integration/")) {
+			return 4;
+		}
+
+		// Priority 5: Everything else
+		return 5;
+	}
+};
+
 TypedArray<Dictionary> WarningCaptureEditor::_scan_all_gdscripts() {
 	TypedArray<Dictionary> all_warnings;
 
@@ -443,11 +487,32 @@ TypedArray<Dictionary> WarningCaptureEditor::_scan_all_gdscripts() {
 	String project_dir = ProjectSettings::get_singleton()->globalize_path("res://");
 	_find_all_gdscript_files(project_dir, gdscript_files);
 
+	// Sort files by priority: game code first, unit tests second, integration tests last
+	// This ensures critical errors are found early and slow integration tests come last
+	gdscript_files.sort_custom<_ValidationPriorityComparator>();
+
 	print_line("WarningCaptureEditor: Scanning " + itos(gdscript_files.size()) + " GDScript files for warnings...");
+	print_line("WarningCaptureEditor: Files sorted by priority: Core → Scripts → Tools → Unit Tests → Integration Tests");
+
+	// Track current category for progress reporting
+	int current_priority = -1;
 
 	// Validate each file and collect warnings
 	for (int i = 0; i < gdscript_files.size(); i++) {
 		String file_path = gdscript_files[i];
+
+		// Report when we enter a new priority category
+		int file_priority = _ValidationPriorityComparator::_get_priority(file_path);
+		if (file_priority != current_priority) {
+			current_priority = file_priority;
+			String category = "Other";
+			if (file_priority == 0) category = "Core (autoload/core)";
+			else if (file_priority == 1) category = "Game Scripts";
+			else if (file_priority == 2) category = "Tools/Addons";
+			else if (file_priority == 3) category = "Unit Tests";
+			else if (file_priority == 4) category = "Integration Tests";
+			print_line("WarningCaptureEditor: [" + category + "] Starting validation...");
+		}
 
 		// Progress reporting every 25 files
 		if (i % 25 == 0 && i > 0) {
@@ -457,14 +522,10 @@ TypedArray<Dictionary> WarningCaptureEditor::_scan_all_gdscripts() {
 		// Convert to res:// path
 		String res_path = ProjectSettings::get_singleton()->localize_path(file_path);
 
-		// DEBUG: Print which file we're about to validate
-		print_line("WarningCaptureEditor: [" + itos(i) + "] Validating: " + res_path);
-
 		// Read source code
 		Ref<FileAccess> file = FileAccess::open(file_path, FileAccess::READ);
 		if (file.is_null()) {
-			print_line("WarningCaptureEditor: [" + itos(i) + "] SKIPPED (can't open): " + res_path);
-			continue;
+			continue;  // Silently skip files that can't be opened
 		}
 		String source_code = file->get_as_text();
 		file->close();
@@ -472,7 +533,6 @@ TypedArray<Dictionary> WarningCaptureEditor::_scan_all_gdscripts() {
 		// Skip files that cause validation to hang (complex dependency chains)
 		// Integration tests often have deep dependency trees that cause validate() to hang
 		if (res_path.contains("test/integration/")) {
-			print_line("WarningCaptureEditor: [" + itos(i) + "] SKIPPING integration test (known to hang): " + res_path);
 			Dictionary error_dict;
 			error_dict["source_file"] = res_path;
 			error_dict["source_line"] = 0;
@@ -488,9 +548,7 @@ TypedArray<Dictionary> WarningCaptureEditor::_scan_all_gdscripts() {
 		List<ScriptLanguage::ScriptError> errors;
 		List<ScriptLanguage::Warning> warnings;
 
-		print_line("WarningCaptureEditor: [" + itos(i) + "] Calling validate()...");
-		bool valid = gdscript_lang->validate(source_code, res_path, &functions, &errors, &warnings);
-		print_line("WarningCaptureEditor: [" + itos(i) + "] Validate returned, processing results...");
+		gdscript_lang->validate(source_code, res_path, &functions, &errors, &warnings);
 
 		// Convert warnings to Dictionary format
 		for (const ScriptLanguage::Warning &w : warnings) {
