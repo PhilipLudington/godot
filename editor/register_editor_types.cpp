@@ -32,7 +32,10 @@
 
 #include "core/object/script_language.h"
 #include "editor/debugger/debug_adapter/debug_adapter_server.h"
+#include "editor/debugger/editor_debugger_node.h"
+#include "editor/debugger/script_editor_debugger.h"
 #include "editor/editor_command_palette.h"
+#include "editor/editor_log.h"
 #include "editor/editor_feature_profile.h"
 #include "editor/editor_file_system.h"
 #include "editor/editor_interface.h"
@@ -186,7 +189,10 @@ void register_editor_types() {
 
 	GDREGISTER_CLASS(EditorScenePostImport);
 	GDREGISTER_CLASS(EditorCommandPalette);
+	GDREGISTER_VIRTUAL_CLASS(EditorLog);
 	GDREGISTER_CLASS(EditorDebuggerPlugin);
+	GDREGISTER_VIRTUAL_CLASS(EditorDebuggerNode);
+	GDREGISTER_VIRTUAL_CLASS(ScriptEditorDebugger);
 	GDREGISTER_ABSTRACT_CLASS(EditorDebuggerSession);
 
 	// Required to document import options in the class reference.
