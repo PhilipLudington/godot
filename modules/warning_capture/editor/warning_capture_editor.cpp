@@ -4,6 +4,7 @@
 #include "editor/debugger/editor_debugger_node.h"
 #include "editor/debugger/script_editor_debugger.h"
 #include "editor/editor_log.h"
+#include "editor/editor_file_system.h"
 #include "core/io/file_access.h"
 #include "core/io/dir_access.h"
 #include "core/io/json.h"
@@ -18,15 +19,24 @@ void WarningCaptureEditor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("add_warning", "warning"), &WarningCaptureEditor::add_warning);
 	ClassDB::bind_method(D_METHOD("capture_debugger_warnings_now"), &WarningCaptureEditor::capture_debugger_warnings_now);
 	ClassDB::bind_method(D_METHOD("capture_debugger_errors_now"), &WarningCaptureEditor::capture_debugger_errors_now);
+
+	// NEW bindings for configuration
+	ClassDB::bind_method(D_METHOD("set_auto_capture_enabled", "enabled"), &WarningCaptureEditor::set_auto_capture_enabled);
+	ClassDB::bind_method(D_METHOD("set_debounce_interval", "milliseconds"), &WarningCaptureEditor::set_debounce_interval);
+	ClassDB::bind_method(D_METHOD("set_per_file_timeout", "milliseconds"), &WarningCaptureEditor::set_per_file_timeout);
+
+	// Bind internal methods that need to be called via call_deferred
+	ClassDB::bind_method(D_METHOD("_setup_event_listeners"), &WarningCaptureEditor::_setup_event_listeners);
 }
 
 WarningCaptureEditor::WarningCaptureEditor() {
-	// Initialize file paths - both go to godot/diagnostics/
-	// Use ProjectSettings to get the project directory
+	// Initialize file paths - all go to diagnostics/
 	String project_dir = ProjectSettings::get_singleton()->globalize_path("res://");
 	String diagnostics_dir = project_dir.path_join("diagnostics");
 	warnings_file_path = diagnostics_dir.path_join("warnings.json");
 	debugger_file_path = diagnostics_dir.path_join("debugger.json");
+	timestamp_file_path = diagnostics_dir.path_join(".last_updated");
+	metadata_file_path = diagnostics_dir.path_join(".scan_metadata.json");
 
 	// Ensure diagnostics directory exists
 	DirAccess::make_dir_recursive_absolute(diagnostics_dir);
@@ -45,9 +55,8 @@ WarningCaptureEditor::WarningCaptureEditor() {
 		debugger_file->close();
 	}
 
-	// Note: Can't capture debugger warnings here - they're not populated yet
-	// The error handler will capture parse errors, and we can query debugger warnings
-	// later via add_warning() calls or on-demand queries
+	// Setup event listeners (deferred until scene tree ready)
+	call_deferred("_setup_event_listeners");
 }
 
 void WarningCaptureEditor::capture_debugger_warnings_now() {
@@ -163,6 +172,135 @@ void WarningCaptureEditor::_capture_startup_errors() {
 		print_line("WarningCaptureEditor: Writing " + itos(accumulated_warnings.size()) + " startup errors");
 		_write_warnings_file();
 	}
+}
+
+// Event listener setup
+void WarningCaptureEditor::_setup_event_listeners() {
+	if (!EditorNode::get_singleton()) {
+		print_line("WarningCaptureEditor: EditorNode not available, event listeners not set up");
+		return;
+	}
+
+	print_line("WarningCaptureEditor: Setting up auto-capture event listeners...");
+
+	// Listen for filesystem changes (file saves, imports, deletions)
+	EditorFileSystem *efs = EditorFileSystem::get_singleton();
+	if (efs) {
+		efs->connect("filesystem_changed", callable_mp(this, &WarningCaptureEditor::_on_filesystem_changed));
+		print_line("WarningCaptureEditor: Connected to filesystem_changed signal");
+	} else {
+		print_line("WarningCaptureEditor: WARNING - EditorFileSystem not available");
+	}
+
+	print_line("WarningCaptureEditor: Auto-capture enabled - will scan on file saves");
+}
+
+// Debouncing logic
+bool WarningCaptureEditor::_should_skip_scan() {
+	if (!auto_capture_enabled) {
+		return true;
+	}
+
+	uint64_t now = Time::get_singleton()->get_ticks_msec();
+	uint64_t time_since_last = now - last_scan_timestamp;
+
+	if (time_since_last < debounce_interval_ms) {
+		print_line("WarningCaptureEditor: Skipping scan (debounce: " + itos(time_since_last) + "ms < " + itos(debounce_interval_ms) + "ms)");
+		return true;
+	}
+
+	return false;
+}
+
+// Event handlers
+void WarningCaptureEditor::_on_filesystem_changed() {
+	if (_should_skip_scan()) {
+		return;
+	}
+
+	print_line("WarningCaptureEditor: Filesystem changed, auto-capturing diagnostics...");
+	uint64_t start_time = Time::get_singleton()->get_ticks_msec();
+
+	// Capture all diagnostics
+	capture_debugger_warnings_now();
+	capture_debugger_errors_now();
+
+	uint64_t duration = Time::get_singleton()->get_ticks_msec() - start_time;
+	last_scan_timestamp = Time::get_singleton()->get_ticks_msec();
+
+	// Write timestamp file for Claude Code
+	_write_timestamp_file();
+
+	print_line("WarningCaptureEditor: Auto-capture completed in " + itos(duration) + "ms");
+}
+
+void WarningCaptureEditor::_on_script_saved(Ref<Script> p_script) {
+	// For now, just trigger full scan
+	// Future optimization: incremental scan for just this script
+	_on_filesystem_changed();
+}
+
+// Timestamp file writer
+void WarningCaptureEditor::_write_timestamp_file() {
+	Ref<FileAccess> file = FileAccess::open(timestamp_file_path, FileAccess::WRITE);
+	if (file.is_valid()) {
+		Dictionary timestamp_data;
+		timestamp_data["timestamp_ms"] = Time::get_singleton()->get_ticks_msec();
+		timestamp_data["datetime"] = Time::get_singleton()->get_datetime_string_from_system();
+		timestamp_data["warnings_file"] = "diagnostics/warnings.json";
+		timestamp_data["debugger_file"] = "diagnostics/debugger.json";
+		timestamp_data["metadata_file"] = "diagnostics/.scan_metadata.json";
+
+		file->store_string(JSON::stringify(timestamp_data, "\t"));
+		file->close();
+	}
+}
+
+// Metadata file writer
+void WarningCaptureEditor::_write_metadata_file(uint64_t p_duration_ms, int p_files_scanned, int p_files_skipped) {
+	Ref<FileAccess> file = FileAccess::open(metadata_file_path, FileAccess::WRITE);
+	if (file.is_valid()) {
+		Dictionary metadata;
+		metadata["scan_duration_ms"] = p_duration_ms;
+		metadata["total_files_scanned"] = p_files_scanned;
+		metadata["files_skipped_timeout"] = p_files_skipped;
+		metadata["scan_timestamp"] = Time::get_singleton()->get_datetime_string_from_system();
+		metadata["within_budget"] = p_duration_ms <= total_scan_timeout_ms;
+
+		String performance_rating = "slow";
+		if (p_duration_ms < 30000) {
+			performance_rating = "excellent";
+		} else if (p_duration_ms < 60000) {
+			performance_rating = "good";
+		}
+		metadata["performance_rating"] = performance_rating;
+
+		file->store_string(JSON::stringify(metadata, "\t"));
+		file->close();
+	}
+}
+
+// Configuration methods
+void WarningCaptureEditor::set_auto_capture_enabled(bool p_enabled) {
+	auto_capture_enabled = p_enabled;
+	print_line("WarningCaptureEditor: Auto-capture " + String(p_enabled ? "enabled" : "disabled"));
+}
+
+void WarningCaptureEditor::set_debounce_interval(uint64_t p_ms) {
+	debounce_interval_ms = p_ms;
+}
+
+void WarningCaptureEditor::set_per_file_timeout(uint64_t p_ms) {
+	per_file_timeout_ms = p_ms;
+}
+
+// Estimate fix time helper
+String WarningCaptureEditor::_estimate_fix_time(int p_issue_count) const {
+	if (p_issue_count == 0) return "0 minutes";
+	if (p_issue_count <= 5) return "2-5 minutes";
+	if (p_issue_count <= 20) return "5-15 minutes";
+	if (p_issue_count <= 50) return "15-30 minutes";
+	return "30+ minutes";
 }
 
 WarningCaptureEditor::~WarningCaptureEditor() {
@@ -290,10 +428,11 @@ void WarningCaptureEditor::_write_warnings_file() {
 	// Sort warnings by severity then file/line
 	TypedArray<Dictionary> sorted_warnings = accumulated_warnings;
 
-	// Count by category
+	// Count by category and file
 	Dictionary by_severity;
 	Dictionary by_source;
 	Dictionary by_category;
+	Dictionary by_file;
 
 	for (int i = 0; i < sorted_warnings.size(); i++) {
 		Dictionary warning = sorted_warnings[i];
@@ -312,6 +451,12 @@ void WarningCaptureEditor::_write_warnings_file() {
 		Variant current_cat = by_category.get(category, 0);
 		int cat_count = (int)current_cat;
 		by_category[category] = cat_count + 1;
+
+		// NEW: Count per file
+		String file = warning.get("file", "unknown");
+		Variant current_file = by_file.get(file, 0);
+		int file_count = (int)current_file;
+		by_file[file] = file_count + 1;
 	}
 
 	// Add priorities
@@ -328,30 +473,65 @@ void WarningCaptureEditor::_write_warnings_file() {
 	int error_count = (int)err_var;
 	int warning_count = (int)warn_var;
 	if (error_count > 0) {
-		fix_sequence.append(vformat("Fix %d error(s)", error_count));
+		fix_sequence.append(vformat("Fix %d parse/syntax error(s) - blocks compilation", error_count));
 	}
 	if (warning_count > 0) {
-		fix_sequence.append(vformat("Fix %d warning(s)", warning_count));
+		fix_sequence.append(vformat("Fix %d compiler warning(s) - improves code quality", warning_count));
 	}
 
-	// Build final report
+	// NEW: Determine recommended starting file (file with most issues)
+	String start_file = "";
+	int max_issues = 0;
+	Array file_keys = by_file.keys();
+	for (int i = 0; i < file_keys.size(); i++) {
+		String file = file_keys[i];
+		int count = (int)by_file.get(file, 0);
+		if (count > max_issues) {
+			max_issues = count;
+			start_file = file;
+		}
+	}
+
+	// NEW: Identify batch-fixable categories
+	Array batch_fixable;
+	if ((int)by_category.get("unused_variable", 0) > 0) {
+		batch_fixable.append("unused_variable");
+	}
+	if ((int)by_category.get("shadowed_variable", 0) > 0) {
+		batch_fixable.append("shadowed_variable");
+	}
+
+	// Build metadata
 	Dictionary metadata;
 	metadata["generated_at"] = Time::get_singleton()->get_datetime_string_from_system();
-	metadata["project"] = "Stellar Throne";
+	metadata["project"] = ProjectSettings::get_singleton()->get_setting("application/config/name", "Unknown Project");
 	metadata["total_issues"] = sorted_warnings.size();
 	metadata["by_source"] = by_source;
 	metadata["by_severity"] = by_severity;
 	metadata["by_category"] = by_category;
+	metadata["by_file"] = by_file;
+	metadata["fix_ready"] = true;
+	metadata["schema_version"] = "1.0";
 
+	// NEW: Claude Code hints
+	Dictionary claude_hints;
+	claude_hints["start_with_file"] = start_file;
+	claude_hints["max_issues_in_file"] = max_issues;
+	claude_hints["batch_fixes_available"] = batch_fixable;
+	claude_hints["estimated_fix_time"] = _estimate_fix_time(sorted_warnings.size());
+	claude_hints["priority_order"] = "errors_first";
+
+	// Build final report
 	Dictionary report;
 	report["metadata"] = metadata;
+	report["claude_hints"] = claude_hints;
 	report["issues"] = sorted_warnings;
 	report["fix_sequence"] = fix_sequence;
 
 	// Write to file
 	Ref<FileAccess> file = FileAccess::open(warnings_file_path, FileAccess::WRITE);
 	if (file.is_valid()) {
-		file->store_string(JSON::stringify(report));
+		file->store_string(JSON::stringify(report, "\t"));  // Pretty print with tabs
 		file->close();
 	}
 }
@@ -483,6 +663,9 @@ struct _ValidationPriorityComparator {
 
 TypedArray<Dictionary> WarningCaptureEditor::_scan_all_gdscripts() {
 	TypedArray<Dictionary> all_warnings;
+	int files_scanned = 0;
+	int files_skipped_timeout = 0;
+	uint64_t total_start_time = Time::get_singleton()->get_ticks_msec();
 
 	// Get GDScriptLanguage singleton
 	GDScriptLanguage *gdscript_lang = GDScriptLanguage::get_singleton();
@@ -500,7 +683,7 @@ TypedArray<Dictionary> WarningCaptureEditor::_scan_all_gdscripts() {
 	// This ensures critical errors are found early and slow integration tests come last
 	gdscript_files.sort_custom<_ValidationPriorityComparator>();
 
-	print_line("WarningCaptureEditor: Scanning " + itos(gdscript_files.size()) + " GDScript files for warnings...");
+	print_line("WarningCaptureEditor: Scanning " + itos(gdscript_files.size()) + " GDScript files (timeout: " + itos(per_file_timeout_ms) + "ms per file)...");
 	print_line("WarningCaptureEditor: Files sorted by priority: Core → Scripts → Tools → Unit Tests → Integration Tests");
 
 	// Track current category for progress reporting
@@ -508,6 +691,14 @@ TypedArray<Dictionary> WarningCaptureEditor::_scan_all_gdscripts() {
 
 	// Validate each file and collect warnings
 	for (int i = 0; i < gdscript_files.size(); i++) {
+		// Check total budget
+		uint64_t elapsed = Time::get_singleton()->get_ticks_msec() - total_start_time;
+		if (elapsed > total_scan_timeout_ms) {
+			print_line("WarningCaptureEditor: TIMEOUT - Total scan budget exceeded (" + itos(elapsed) + "ms > " + itos(total_scan_timeout_ms) + "ms)");
+			print_line("WarningCaptureEditor: Scanned " + itos(files_scanned) + " / " + itos(gdscript_files.size()) + " files before timeout");
+			break;
+		}
+
 		String file_path = gdscript_files[i];
 
 		// Report when we enter a new priority category
@@ -525,7 +716,7 @@ TypedArray<Dictionary> WarningCaptureEditor::_scan_all_gdscripts() {
 
 		// Progress reporting every 25 files
 		if (i % 25 == 0 && i > 0) {
-			print_line("WarningCaptureEditor: Progress: " + itos(i) + " / " + itos(gdscript_files.size()) + " files validated...");
+			print_line("WarningCaptureEditor: Progress: " + itos(i) + " / " + itos(gdscript_files.size()) + " files...");
 		}
 
 		// Convert to res:// path
@@ -552,12 +743,34 @@ TypedArray<Dictionary> WarningCaptureEditor::_scan_all_gdscripts() {
 			continue;
 		}
 
-		// Validate the script
+		// Validate the script with timeout tracking
 		List<String> functions;  // Not used, but required for validate() signature
 		List<ScriptLanguage::ScriptError> errors;
 		List<ScriptLanguage::Warning> warnings;
 
+		uint64_t file_start_time = Time::get_singleton()->get_ticks_msec();
+
+		// IMPORTANT: GDScriptLanguage::validate() is synchronous and can hang
+		// We check the duration AFTER it completes
 		gdscript_lang->validate(source_code, res_path, &functions, &errors, &warnings);
+
+		uint64_t file_duration = Time::get_singleton()->get_ticks_msec() - file_start_time;
+
+		// Log slow validations
+		if (file_duration > per_file_timeout_ms) {
+			print_line("WarningCaptureEditor: SLOW validation: " + res_path + " took " + itos(file_duration) + "ms (threshold: " + itos(per_file_timeout_ms) + "ms)");
+			files_skipped_timeout++;
+
+			// Still capture partial results if available
+			Dictionary timeout_warning;
+			timeout_warning["source_file"] = res_path;
+			timeout_warning["source_line"] = 0;
+			timeout_warning["message"] = "File validation exceeded timeout (" + itos(file_duration) + "ms > " + itos(per_file_timeout_ms) + "ms) - results may be incomplete";
+			timeout_warning["code"] = "VALIDATION_TIMEOUT";
+			timeout_warning["is_warning"] = true;
+			timeout_warning["is_error"] = false;
+			all_warnings.append(timeout_warning);
+		}
 
 		// Convert warnings to Dictionary format
 		for (const ScriptLanguage::Warning &w : warnings) {
@@ -581,9 +794,17 @@ TypedArray<Dictionary> WarningCaptureEditor::_scan_all_gdscripts() {
 			error_dict["is_error"] = true;
 			all_warnings.append(error_dict);
 		}
+
+		files_scanned++;
 	}
 
-	print_line("WarningCaptureEditor: Found " + itos(all_warnings.size()) + " warnings/errors from GDScript validation");
+	uint64_t total_duration = Time::get_singleton()->get_ticks_msec() - total_start_time;
+	print_line("WarningCaptureEditor: Scan complete - " + itos(files_scanned) + " files in " + itos(total_duration) + "ms");
+	print_line("WarningCaptureEditor: Found " + itos(all_warnings.size()) + " issues (" + itos(files_skipped_timeout) + " slow files)");
+
+	// Write metadata
+	_write_metadata_file(total_duration, files_scanned, files_skipped_timeout);
+
 	return all_warnings;
 }
 

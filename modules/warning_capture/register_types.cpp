@@ -5,6 +5,7 @@
 #include "editor/editor_node.h"
 #include "scene/gui/button.h"
 #include "core/error/error_macros.h"
+#include "core/config/project_settings.h"
 
 // Singleton for warning capture
 Ref<WarningCaptureEditor> _warning_capture_singleton;
@@ -34,8 +35,38 @@ void initialize_warning_capture_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
 		ClassDB::register_class<WarningCaptureEditor>();
 
+		// Register project settings
+		GLOBAL_DEF("diagnostics/auto_capture_enabled", true);
+		ProjectSettings::get_singleton()->set_custom_property_info(
+			PropertyInfo(Variant::BOOL, "diagnostics/auto_capture_enabled"));
+
+		GLOBAL_DEF("diagnostics/debounce_interval_ms", 2000);
+		ProjectSettings::get_singleton()->set_custom_property_info(
+			PropertyInfo(Variant::INT, "diagnostics/debounce_interval_ms",
+			PROPERTY_HINT_RANGE, "500,10000,500"));
+
+		GLOBAL_DEF("diagnostics/per_file_timeout_ms", 500);
+		ProjectSettings::get_singleton()->set_custom_property_info(
+			PropertyInfo(Variant::INT, "diagnostics/per_file_timeout_ms",
+			PROPERTY_HINT_RANGE, "100,5000,100"));
+
+		GLOBAL_DEF("diagnostics/total_scan_timeout_ms", 90000);
+		ProjectSettings::get_singleton()->set_custom_property_info(
+			PropertyInfo(Variant::INT, "diagnostics/total_scan_timeout_ms",
+			PROPERTY_HINT_RANGE, "10000,300000,5000"));
+
 		// Auto-instantiate the warning capture editor
 		_warning_capture_singleton = memnew(WarningCaptureEditor);
+
+		// Apply settings to singleton
+		bool auto_enabled = ProjectSettings::get_singleton()->get_setting("diagnostics/auto_capture_enabled");
+		_warning_capture_singleton->set_auto_capture_enabled(auto_enabled);
+
+		int debounce = ProjectSettings::get_singleton()->get_setting("diagnostics/debounce_interval_ms");
+		_warning_capture_singleton->set_debounce_interval(debounce);
+
+		int per_file = ProjectSettings::get_singleton()->get_setting("diagnostics/per_file_timeout_ms");
+		_warning_capture_singleton->set_per_file_timeout(per_file);
 
 		// Register error handler to capture ALL errors from this point forward
 		_error_handler.userdata = nullptr;
@@ -47,8 +78,10 @@ void initialize_warning_capture_module(ModuleInitializationLevel p_level) {
 
 		print_line("==========================================");
 		print_line("WARNING CAPTURE MODULE: Initialized");
+		print_line("Auto-capture: " + String(auto_enabled ? "ENABLED" : "DISABLED"));
 		print_line("Access from console: WarningCapture.capture_debugger_warnings_now()");
-		print_line("Warnings will be written to godot/diagnostics/warnings.json");
+		print_line("Warnings will be written to diagnostics/warnings.json");
+		print_line("Debugger errors will be written to diagnostics/debugger.json");
 		print_line("==========================================");
 	}
 #endif
