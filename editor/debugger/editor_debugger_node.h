@@ -31,6 +31,8 @@
 #ifndef EDITOR_DEBUGGER_NODE_H
 #define EDITOR_DEBUGGER_NODE_H
 
+#include "modules/modules_enabled.gen.h" // For MODULE_WARNING_CAPTURE_ENABLED
+
 #include "core/object/script_language.h"
 #include "editor/debugger/editor_debugger_server.h"
 #include "scene/gui/margin_container.h"
@@ -218,7 +220,7 @@ public:
 	void add_debugger_plugin(const Ref<EditorDebuggerPlugin> &p_plugin);
 	void remove_debugger_plugin(const Ref<EditorDebuggerPlugin> &p_plugin);
 
-#ifdef WARNING_CAPTURE_ENABLED
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
 	// Direct script warning reporting (for editor-time compilation)
 	void report_script_warning(const String &p_file, int p_line, const String &p_error, const String &p_message);
 #endif

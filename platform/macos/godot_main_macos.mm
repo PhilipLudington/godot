@@ -83,7 +83,8 @@ int main(int argc, char **argv) {
 	if (ret == EXIT_SUCCESS) {
 		os.run();
 	} else {
-		os.set_exit_code(EXIT_FAILURE);
+		// Preserve actual exit code (e.g., 2 for warnings-only in --check-script)
+		os.set_exit_code(ret);
 	}
 
 	@autoreleasepool {

@@ -44,6 +44,7 @@
 #include "core/io/file_access_zip.h"
 #include "core/io/image.h"
 #include "core/io/image_loader.h"
+#include "core/io/json.h"
 #include "core/io/ip.h"
 #include "core/io/resource_loader.h"
 #include "core/object/message_queue.h"
@@ -123,7 +124,11 @@
 #include "main/steam_tracker.h"
 #endif
 
-#include "modules/modules_enabled.gen.h" // For mono.
+#include "modules/modules_enabled.gen.h" // For mono and warning_capture.
+
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
+#include "modules/warning_capture/script_validator.h"
+#endif
 
 #if defined(MODULE_MONO_ENABLED) && defined(TOOLS_ENABLED)
 #include "modules/mono/editor/bindings_generator.h"
@@ -257,6 +262,14 @@ static bool include_docs_in_extension_api_dump = false;
 static bool validate_extension_api = false;
 static String validate_extension_api_file;
 #endif
+
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
+// Script validation (--check-script, --validate-scripts)
+static String check_script_path;
+static bool validate_scripts = false;
+static bool output_format_json = false;
+#endif
+
 bool profile_gpu = false;
 
 // Constants.
@@ -632,6 +645,11 @@ void Main::print_help(const char *p_binary) {
 	print_help_option("-s, --script <script>", "Run a script.\n");
 	print_help_option("--main-loop <main_loop_name>", "Run a MainLoop specified by its global class name.\n");
 	print_help_option("--check-only", "Only parse for errors and quit (use with --script).\n");
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
+	print_help_option("--check-script <path>", "Validate a GDScript file and output diagnostics. Use with --output-format.\n");
+	print_help_option("--validate-scripts <dir>", "Validate all GDScript files in a directory recursively. Use with --output-format.\n");
+	print_help_option("--output-format <format>", "Output format for script validation: \"json\" or \"text\" (default: text).\n");
+#endif
 #ifdef TOOLS_ENABLED
 	print_help_option("--import", "Starts the editor, waits for any resources to be imported, and then quits.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--export-release <preset> <path>", "Export the project in release mode using the given preset and output path. The preset name should match one defined in \"export_presets.cfg\".\n", CLI_OPTION_AVAILABILITY_EDITOR);
@@ -3658,6 +3676,20 @@ int Main::start() {
 		// Designed to override and pass arguments to the unit test handler.
 		if (E->get() == "--check-only") {
 			check_only = true;
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
+		} else if (E->get() == "--check-script" && E->next()) {
+			check_script_path = E->next()->get();
+			E = E->next();
+		} else if (E->get() == "--validate-scripts" && E->next()) {
+			validate_scripts = true;
+			// Store the directory path in check_script_path (reuse the variable)
+			check_script_path = E->next()->get();
+			E = E->next();
+		} else if (E->get() == "--output-format" && E->next()) {
+			String format = E->next()->get();
+			output_format_json = (format == "json");
+			E = E->next();
+#endif
 #ifdef TOOLS_ENABLED
 		} else if (E->get() == "--no-docbase") {
 			gen_flags.set_flag(DocTools::GENERATE_FLAG_SKIP_BASIC_TYPES);
@@ -3921,6 +3953,28 @@ int Main::start() {
 	if (main_loop_type.is_empty()) {
 		main_loop_type = GLOBAL_GET("application/run/main_loop_type");
 	}
+
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
+	// Handle --check-script validation (skip if --validate-scripts is set)
+	if (!check_script_path.is_empty() && !validate_scripts) {
+		int exit_code = ScriptValidator::validate_script(check_script_path, output_format_json);
+		OS::get_singleton()->set_exit_code(exit_code);
+		return exit_code;
+	}
+#endif
+
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
+	// Handle --validate-scripts (project-wide validation)
+	if (validate_scripts) {
+		if (check_script_path.is_empty()) {
+			OS::get_singleton()->print("ERROR: --validate-scripts requires a directory path\n");
+			return EXIT_FAILURE;
+		}
+		int exit_code = ScriptValidator::validate_directory(check_script_path, output_format_json);
+		OS::get_singleton()->set_exit_code(exit_code);
+		return exit_code;
+	}
+#endif
 
 	if (!script.is_empty()) {
 		Ref<Script> script_res = ResourceLoader::load(script);

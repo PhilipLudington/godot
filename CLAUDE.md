@@ -1,28 +1,70 @@
 # GDScript Validation for Claude Code
 
-## Quick Start
+## Quick Validation (Single Script)
 
-**Validate GDScript files:**
+**After editing a .gd file, validate it immediately:**
 
 ```bash
-cat > /tmp/validate.gd << 'EOF'
-extends SceneTree
-func _init():
-    WarningCapture.capture_debugger_warnings_now()
-    var file = FileAccess.open("res://diagnostics/warnings.json", FileAccess.READ)
-    var json = JSON.new()
-    json.parse(file.get_as_text())
-    var data = json.get_data()
-    file.close()
-    var errors = data.get("metadata", {}).get("by_severity", {}).get("error", 0)
-    quit(1 if errors > 0 else 0)
-EOF
-
 /Users/mrphil/Fun/godot-fork/bin/godot.macos.editor.arm64 \
-  --headless --path . --script /tmp/validate.gd --quit
+  --headless --check-script /path/to/script.gd --output-format json
 ```
 
-**Exit codes:** 0 = success, 1 = errors found
+**Exit codes:**
+- 0 = valid (no errors or warnings)
+- 1 = errors found
+- 2 = warnings only (no errors)
+
+**JSON output example:**
+```json
+{"path":"/path/to/script.gd","valid":true,"errors":[],"warnings":[{"line":4,"column":5,"end_line":4,"end_column":29,"code":"UNUSED_VARIABLE","message":"..."}]}
+```
+
+**Text output (default):**
+```
+/path/to/script.gd:8:5: ERROR: Function "prnt()" not found in base self.
+/path/to/script.gd:6:5: WARNING [UNUSED_VARIABLE]: The local variable "local_unused" is declared but never used.
+```
+
+---
+
+## Full Project Validation
+
+**Validate all .gd files in a directory:**
+
+```bash
+/Users/mrphil/Fun/godot-fork/bin/godot.macos.editor.arm64 \
+  --headless --validate-scripts /path/to/project --output-format json
+```
+
+**JSON output example:**
+```json
+{"project_path":"/path/to/project","files_checked":42,"files_with_errors":3,"files_with_warnings":10,"total_errors":5,"total_warnings":15,"issues":[...]}
+```
+
+**Text output:**
+```
+/path/to/project/scripts/player.gd:3:5: ERROR: Function "prnt()" not found.
+/path/to/project/scripts/utils.gd:10:5: WARNING [UNUSED_VARIABLE]: ...
+
+Summary: 42 files checked, 5 errors, 15 warnings
+```
+
+---
+
+## Autonomous Error-Fixing Workflow
+
+When editing GDScript files, follow this loop:
+
+```
+1. Edit .gd file
+2. Run validation command
+3. If exit code != 0:
+   a. Parse JSON output
+   b. Fix errors first (severity: "error")
+   c. Then fix warnings
+   d. Go to step 2
+4. Done when exit code == 0
+```
 
 ---
 
@@ -45,6 +87,7 @@ cat diagnostics/warnings.json
     {
       "file": "res://scripts/player.gd",
       "line": 45,
+      "column": 5,
       "message": "The variable 'x' is declared but never used",
       "code": "UNUSED_VARIABLE",
       "severity": "warning"
@@ -63,9 +106,11 @@ cat diagnostics/warnings.json
 3. Batch fix categories in `claude_hints.batch_fixes_available`
 
 **Common fixes:**
-- `UNUSED_VARIABLE` → Remove the variable
+- `UNUSED_VARIABLE` → Remove or use the variable, or prefix with `_`
+- `UNUSED_PARAMETER` → Prefix parameter name with `_`
 - `SHADOWED_VARIABLE` → Rename the variable
-- Parse errors → Fix syntax at line number
+- `RETURN_VALUE_DISCARDED` → Assign result or use `@warning_ignore`
+- Parse errors → Fix syntax at exact line:column
 
 **After fixing, re-validate until exit code is 0.**
 
@@ -80,6 +125,19 @@ jq '.metadata.total_issues' diagnostics/warnings.json
 # Get hints
 jq '.claude_hints' diagnostics/warnings.json
 
-# List all issues
-jq -r '.issues[] | "\(.file):\(.line) - \(.message)"' diagnostics/warnings.json
+# List all issues with location
+jq -r '.issues[] | "\(.file):\(.line):\(.column // 0) \(.severity): \(.message)"' diagnostics/warnings.json
+
+# List only errors
+jq -r '.issues[] | select(.severity == "error") | "\(.file):\(.line) - \(.message)"' diagnostics/warnings.json
+```
+
+---
+
+## Planned Improvements
+
+### --warnings-as-errors
+Treat warnings as errors for stricter validation:
+```bash
+godot --headless --check-script /path/to/script.gd --warnings-as-errors
 ```

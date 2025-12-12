@@ -4,7 +4,7 @@ This document tracks all files modified outside of `modules/warning_capture/` fo
 
 ## Overview
 
-All changes are wrapped with `#ifdef WARNING_CAPTURE_ENABLED` guards, which is defined in `modules/warning_capture/SCsub` when this module is built.
+All changes are wrapped with `#ifdef MODULE_WARNING_CAPTURE_ENABLED` guards, which is defined in `modules/warning_capture/SCsub` when this module is built.
 
 ## Modified Files
 
@@ -131,6 +131,37 @@ All changes are wrapped with `#ifdef WARNING_CAPTURE_ENABLED` guards, which is d
 
 ---
 
+### main/main.cpp
+
+**Purpose:** Add `--check-script`, `--validate-scripts`, and `--output-format` CLI flags for headless GDScript validation.
+
+**Changes:**
+- Added static variables `check_script_path`, `validate_scripts`, and `output_format_json` (guarded)
+- Added help documentation for new flags (guarded)
+- Added flag parsing in `Main::start()` (guarded)
+- Added minimal handler code that calls `ScriptValidator` module functions (guarded)
+- All validation logic moved to `modules/warning_capture/script_validator.cpp`
+
+**Conflict Risk:** Low - Only ~20 lines of guarded code, minimal footprint.
+
+**Note:** All changes are wrapped in `#ifdef MODULE_WARNING_CAPTURE_ENABLED` guards. The feature is disabled when the module is disabled.
+
+---
+
+### platform/macos/godot_main_macos.mm
+
+**Purpose:** Preserve custom exit codes from `Main::start()`.
+
+**Changes:**
+- Changed `os.set_exit_code(EXIT_FAILURE)` to `os.set_exit_code(ret)` to preserve actual return value
+- Enables exit code 2 for warnings-only in `--check-script`
+
+**Conflict Risk:** Low - Small change, unlikely to conflict.
+
+**Note:** This is a general platform improvement, NOT guarded.
+
+---
+
 ## Signal Type Hint Fixes
 
 The following signal type hint fixes are NOT guarded because they're bug fixes that should work with or without the module:
@@ -150,8 +181,11 @@ When rebasing onto a new Godot version:
 2. [ ] Check `editor/debugger/` for API changes
 3. [ ] Check `editor/editor_interface.cpp` for new accessor patterns
 4. [ ] Check `editor/register_editor_types.cpp` for registration pattern changes
-5. [ ] Run a full build with the module enabled
-6. [ ] Run a build with `module_warning_capture_enabled=no` to verify guards work
+5. [ ] Check `main/main.cpp` for CLI flag parsing changes
+6. [ ] Check `platform/macos/godot_main_macos.mm` for exit code handling changes
+7. [ ] Run a full build with the module enabled
+8. [ ] Run a build with `module_warning_capture_enabled=no` to verify guards work
+9. [ ] Test `--check-script` with valid, warning-only, and error scripts
 
 ## Version History
 

@@ -5,8 +5,8 @@ Import("env_modules")
 
 env_warning_capture = env_modules.Clone()
 
-# Define WARNING_CAPTURE_ENABLED globally so upstream files can detect this module
-env.Append(CPPDEFINES=["WARNING_CAPTURE_ENABLED"])
+# Note: Godot automatically defines MODULE_WARNING_CAPTURE_ENABLED when this module is enabled
+# We use that define in upstream files to guard our additions
 
 env_warning_capture.add_source_files(env.modules_sources, "*.cpp")
 

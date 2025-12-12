@@ -208,14 +208,14 @@ void EditorDebuggerNode::_bind_methods() {
 	ClassDB::bind_method("live_debug_duplicate_node", &EditorDebuggerNode::live_debug_duplicate_node);
 	ClassDB::bind_method("live_debug_reparent_node", &EditorDebuggerNode::live_debug_reparent_node);
 
-#ifdef WARNING_CAPTURE_ENABLED
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
 	// Debugger access - exposed for warning capture module
 	ClassDB::bind_method(D_METHOD("get_current_debugger"), &EditorDebuggerNode::get_current_debugger);
 	ClassDB::bind_method(D_METHOD("get_default_debugger"), &EditorDebuggerNode::get_default_debugger);
 #endif
 
 	ADD_SIGNAL(MethodInfo("goto_script_line"));
-	// WARNING_CAPTURE_ENABLED: Fixed PropertyInfo type hints (Variant::OBJECT instead of empty constructor)
+	// MODULE_WARNING_CAPTURE_ENABLED: Fixed PropertyInfo type hints (Variant::OBJECT instead of empty constructor)
 	ADD_SIGNAL(MethodInfo("set_execution", PropertyInfo(Variant::OBJECT, "script"), PropertyInfo(Variant::INT, "line")));
 	ADD_SIGNAL(MethodInfo("clear_execution", PropertyInfo(Variant::OBJECT, "script")));
 	ADD_SIGNAL(MethodInfo("breaked", PropertyInfo(Variant::BOOL, "reallydid"), PropertyInfo(Variant::BOOL, "can_debug")));
@@ -845,7 +845,7 @@ void EditorDebuggerNode::remove_debugger_plugin(const Ref<EditorDebuggerPlugin> 
 	Ref<EditorDebuggerPlugin>(p_plugin)->clear();
 }
 
-#ifdef WARNING_CAPTURE_ENABLED
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
 void EditorDebuggerNode::report_script_warning(const String &p_file, int p_line, const String &p_error, const String &p_message) {
 	// Send the warning to the default debugger (first tab)
 	ScriptEditorDebugger *default_debugger = get_default_debugger();

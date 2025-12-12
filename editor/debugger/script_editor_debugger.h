@@ -31,6 +31,8 @@
 #ifndef SCRIPT_EDITOR_DEBUGGER_H
 #define SCRIPT_EDITOR_DEBUGGER_H
 
+#include "modules/modules_enabled.gen.h" // For MODULE_WARNING_CAPTURE_ENABLED
+
 #include "core/object/script_language.h"
 #include "core/os/os.h"
 #include "editor/debugger/editor_debugger_inspector.h"
@@ -321,7 +323,7 @@ public:
 	void send_message(const String &p_message, const Array &p_args);
 	void toggle_profiler(const String &p_profiler, bool p_enable, const Array &p_data);
 
-#ifdef WARNING_CAPTURE_ENABLED
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
 	// API for external access to debugger errors/warnings
 	TypedArray<Dictionary> get_all_errors() const;
 	void dump_errors_to_file(const String &p_file_path) const;

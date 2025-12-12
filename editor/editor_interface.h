@@ -31,6 +31,8 @@
 #ifndef EDITOR_INTERFACE_H
 #define EDITOR_INTERFACE_H
 
+#include "modules/modules_enabled.gen.h" // For MODULE_WARNING_CAPTURE_ENABLED
+
 #include "core/io/resource.h"
 #include "core/object/class_db.h"
 #include "core/object/object.h"
@@ -39,12 +41,12 @@
 class Control;
 class CreateDialog;
 class EditorCommandPalette;
-#ifdef WARNING_CAPTURE_ENABLED
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
 class EditorDebuggerNode;
 #endif
 class EditorFileSystem;
 class EditorInspector;
-#ifdef WARNING_CAPTURE_ENABLED
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
 class EditorLog;
 #endif
 class EditorPaths;
@@ -109,7 +111,7 @@ public:
 
 	EditorCommandPalette *get_command_palette() const;
 	EditorFileSystem *get_resource_file_system() const;
-#ifdef WARNING_CAPTURE_ENABLED
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
 	EditorLog *get_editor_log() const;
 	EditorDebuggerNode *get_debugger_node() const;
 #endif

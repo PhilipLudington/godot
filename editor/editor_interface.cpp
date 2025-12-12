@@ -33,12 +33,12 @@
 
 #include "core/config/project_settings.h"
 #include "editor/create_dialog.h"
-#ifdef WARNING_CAPTURE_ENABLED
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
 #include "editor/debugger/editor_debugger_node.h"
 #endif
 #include "editor/editor_command_palette.h"
 #include "editor/editor_feature_profile.h"
-#ifdef WARNING_CAPTURE_ENABLED
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
 #include "editor/editor_log.h"
 #endif
 #include "editor/editor_main_screen.h"
@@ -85,7 +85,7 @@ EditorFileSystem *EditorInterface::get_resource_file_system() const {
 	return EditorFileSystem::get_singleton();
 }
 
-#ifdef WARNING_CAPTURE_ENABLED
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
 EditorLog *EditorInterface::get_editor_log() const {
 	return EditorNode::get_singleton()->get_log();
 }
@@ -779,7 +779,7 @@ void EditorInterface::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("get_command_palette"), &EditorInterface::get_command_palette);
 	ClassDB::bind_method(D_METHOD("get_resource_filesystem"), &EditorInterface::get_resource_file_system);
-#ifdef WARNING_CAPTURE_ENABLED
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
 	ClassDB::bind_method(D_METHOD("get_editor_log"), &EditorInterface::get_editor_log);
 	ClassDB::bind_method(D_METHOD("get_debugger_node"), &EditorInterface::get_debugger_node);
 #endif

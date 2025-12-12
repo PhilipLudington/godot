@@ -31,6 +31,8 @@
 #ifndef EDITOR_LOG_H
 #define EDITOR_LOG_H
 
+#include "modules/modules_enabled.gen.h" // For MODULE_WARNING_CAPTURE_ENABLED
+
 #include "core/os/thread.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
@@ -178,7 +180,7 @@ private:
 protected:
 	void _notification(int p_what);
 
-#ifdef WARNING_CAPTURE_ENABLED
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
 protected:
 	static void _bind_methods();
 #endif
@@ -191,7 +193,7 @@ public:
 
 	void clear();
 
-#ifdef WARNING_CAPTURE_ENABLED
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
 	// API methods for plugin access
 	void dump_messages_to_file(const String &p_path) const;
 	TypedArray<Dictionary> get_all_messages() const;

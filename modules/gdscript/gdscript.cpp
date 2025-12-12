@@ -57,7 +57,7 @@
 #ifdef TOOLS_ENABLED
 #include "core/extension/gdextension_manager.h"
 #include "editor/editor_paths.h"
-#ifdef WARNING_CAPTURE_ENABLED
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
 #include "editor/editor_node.h"
 #include "editor/debugger/editor_debugger_node.h"
 #endif
@@ -879,7 +879,7 @@ Error GDScript::reload(bool p_keep_state) {
 
 #ifdef DEBUG_ENABLED
 	for (const GDScriptWarning &warning : parser.get_warnings()) {
-#if defined(TOOLS_ENABLED) && defined(WARNING_CAPTURE_ENABLED)
+#if defined(TOOLS_ENABLED) && defined(MODULE_WARNING_CAPTURE_ENABLED)
 		// In editor, send warnings even when not actively debugging
 		if (Engine::get_singleton()->is_editor_hint()) {
 			// Check if we can access the editor debugger

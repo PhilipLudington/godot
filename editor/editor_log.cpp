@@ -30,12 +30,12 @@
 
 #include "editor_log.h"
 
-#ifdef WARNING_CAPTURE_ENABLED
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
 #include "core/io/json.h"
 #endif
 #include "core/object/undo_redo.h"
 #include "core/os/keyboard.h"
-#ifdef WARNING_CAPTURE_ENABLED
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
 #include "core/os/os.h"
 #endif
 #include "core/version.h"
@@ -566,7 +566,7 @@ void EditorLog::deinit() {
 	remove_error_handler(&eh);
 }
 
-#ifdef WARNING_CAPTURE_ENABLED
+#ifdef MODULE_WARNING_CAPTURE_ENABLED
 void EditorLog::dump_messages_to_file(const String &p_path) const {
 	Ref<FileAccess> f = FileAccess::open(p_path, FileAccess::WRITE);
 	ERR_FAIL_COND_MSG(f.is_null(), "Cannot open file for writing: " + p_path);
@@ -653,7 +653,7 @@ void EditorLog::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("message_added",
 		PropertyInfo(Variant::DICTIONARY, "message")));
 }
-#endif // WARNING_CAPTURE_ENABLED
+#endif // MODULE_WARNING_CAPTURE_ENABLED
 
 EditorLog::~EditorLog() {
 	for (const KeyValue<MessageType, LogFilter *> &E : type_filter_map) {
