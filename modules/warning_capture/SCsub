@@ -5,6 +5,9 @@ Import("env_modules")
 
 env_warning_capture = env_modules.Clone()
 
+# Define WARNING_CAPTURE_ENABLED globally so upstream files can detect this module
+env.Append(CPPDEFINES=["WARNING_CAPTURE_ENABLED"])
+
 env_warning_capture.add_source_files(env.modules_sources, "*.cpp")
 
 # Check if building with editor support

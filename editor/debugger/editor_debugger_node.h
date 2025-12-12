@@ -218,8 +218,10 @@ public:
 	void add_debugger_plugin(const Ref<EditorDebuggerPlugin> &p_plugin);
 	void remove_debugger_plugin(const Ref<EditorDebuggerPlugin> &p_plugin);
 
+#ifdef WARNING_CAPTURE_ENABLED
 	// Direct script warning reporting (for editor-time compilation)
 	void report_script_warning(const String &p_file, int p_line, const String &p_error, const String &p_message);
+#endif
 };
 
 #endif // EDITOR_DEBUGGER_NODE_H

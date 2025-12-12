@@ -208,11 +208,14 @@ void EditorDebuggerNode::_bind_methods() {
 	ClassDB::bind_method("live_debug_duplicate_node", &EditorDebuggerNode::live_debug_duplicate_node);
 	ClassDB::bind_method("live_debug_reparent_node", &EditorDebuggerNode::live_debug_reparent_node);
 
-	// Debugger access
+#ifdef WARNING_CAPTURE_ENABLED
+	// Debugger access - exposed for warning capture module
 	ClassDB::bind_method(D_METHOD("get_current_debugger"), &EditorDebuggerNode::get_current_debugger);
 	ClassDB::bind_method(D_METHOD("get_default_debugger"), &EditorDebuggerNode::get_default_debugger);
+#endif
 
 	ADD_SIGNAL(MethodInfo("goto_script_line"));
+	// WARNING_CAPTURE_ENABLED: Fixed PropertyInfo type hints (Variant::OBJECT instead of empty constructor)
 	ADD_SIGNAL(MethodInfo("set_execution", PropertyInfo(Variant::OBJECT, "script"), PropertyInfo(Variant::INT, "line")));
 	ADD_SIGNAL(MethodInfo("clear_execution", PropertyInfo(Variant::OBJECT, "script")));
 	ADD_SIGNAL(MethodInfo("breaked", PropertyInfo(Variant::BOOL, "reallydid"), PropertyInfo(Variant::BOOL, "can_debug")));
@@ -842,6 +845,7 @@ void EditorDebuggerNode::remove_debugger_plugin(const Ref<EditorDebuggerPlugin> 
 	Ref<EditorDebuggerPlugin>(p_plugin)->clear();
 }
 
+#ifdef WARNING_CAPTURE_ENABLED
 void EditorDebuggerNode::report_script_warning(const String &p_file, int p_line, const String &p_error, const String &p_message) {
 	// Send the warning to the default debugger (first tab)
 	ScriptEditorDebugger *default_debugger = get_default_debugger();
@@ -849,6 +853,7 @@ void EditorDebuggerNode::report_script_warning(const String &p_file, int p_line,
 		default_debugger->add_error_from_script(p_file, p_line, p_error, p_message, true);
 	}
 }
+#endif
 
 bool EditorDebuggerNode::plugins_capture(ScriptEditorDebugger *p_debugger, const String &p_message, const Array &p_data) {
 	int session_index = tabs->get_tab_idx_from_control(p_debugger);

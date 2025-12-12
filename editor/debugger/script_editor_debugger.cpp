@@ -33,8 +33,10 @@
 #include "core/config/project_settings.h"
 #include "core/debugger/debugger_marshalls.h"
 #include "core/debugger/remote_debugger.h"
+#ifdef WARNING_CAPTURE_ENABLED
 #include "core/io/file_access.h"
 #include "core/io/json.h"
+#endif
 #include "core/io/marshalls.h"
 #include "core/string/ustring.h"
 #include "core/version.h"
@@ -1776,16 +1778,19 @@ void ScriptEditorDebugger::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("request_remote_object", "id"), &ScriptEditorDebugger::request_remote_object);
 	ClassDB::bind_method(D_METHOD("update_remote_object", "id", "property", "value"), &ScriptEditorDebugger::update_remote_object);
 
+#ifdef WARNING_CAPTURE_ENABLED
 	// API for external access to debugger errors/warnings
 	ClassDB::bind_method(D_METHOD("get_all_errors"), &ScriptEditorDebugger::get_all_errors);
 	ClassDB::bind_method(D_METHOD("dump_errors_to_file", "file_path"), &ScriptEditorDebugger::dump_errors_to_file);
 	ClassDB::bind_method(D_METHOD("clear_errors"), &ScriptEditorDebugger::clear_errors);
+#endif
 
 	ADD_SIGNAL(MethodInfo("started"));
 	ADD_SIGNAL(MethodInfo("stopped"));
 	ADD_SIGNAL(MethodInfo("stop_requested"));
 	ADD_SIGNAL(MethodInfo("stack_frame_selected", PropertyInfo(Variant::INT, "frame")));
 	ADD_SIGNAL(MethodInfo("error_selected", PropertyInfo(Variant::INT, "error")));
+	// WARNING_CAPTURE_ENABLED: Fixed PropertyInfo type hints (Variant::OBJECT instead of empty constructor)
 	ADD_SIGNAL(MethodInfo("breakpoint_selected", PropertyInfo(Variant::OBJECT, "script"), PropertyInfo(Variant::INT, "line")));
 	ADD_SIGNAL(MethodInfo("set_execution", PropertyInfo(Variant::OBJECT, "script"), PropertyInfo(Variant::INT, "line")));
 	ADD_SIGNAL(MethodInfo("clear_execution", PropertyInfo(Variant::OBJECT, "script")));
@@ -2182,6 +2187,7 @@ ScriptEditorDebugger::ScriptEditorDebugger() {
 	_update_buttons_state();
 }
 
+#ifdef WARNING_CAPTURE_ENABLED
 TypedArray<Dictionary> ScriptEditorDebugger::get_all_errors() const {
 	TypedArray<Dictionary> errors_array;
 
@@ -2354,6 +2360,7 @@ void ScriptEditorDebugger::add_error_from_script(const String &p_file, int p_lin
 	emit_signal(SNAME("errors_cleared"));
 	emit_signal(SNAME("error_count_updated"));
 }
+#endif // WARNING_CAPTURE_ENABLED
 
 ScriptEditorDebugger::~ScriptEditorDebugger() {
 	if (peer.is_valid()) {

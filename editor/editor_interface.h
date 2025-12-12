@@ -39,10 +39,14 @@
 class Control;
 class CreateDialog;
 class EditorCommandPalette;
+#ifdef WARNING_CAPTURE_ENABLED
 class EditorDebuggerNode;
+#endif
 class EditorFileSystem;
 class EditorInspector;
+#ifdef WARNING_CAPTURE_ENABLED
 class EditorLog;
+#endif
 class EditorPaths;
 class EditorPlugin;
 class EditorResourcePreview;
@@ -105,8 +109,10 @@ public:
 
 	EditorCommandPalette *get_command_palette() const;
 	EditorFileSystem *get_resource_file_system() const;
+#ifdef WARNING_CAPTURE_ENABLED
 	EditorLog *get_editor_log() const;
 	EditorDebuggerNode *get_debugger_node() const;
+#endif
 	EditorPaths *get_editor_paths() const;
 	EditorResourcePreview *get_resource_previewer() const;
 	EditorSelection *get_selection() const;

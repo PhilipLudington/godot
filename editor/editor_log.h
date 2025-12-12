@@ -178,8 +178,10 @@ private:
 protected:
 	void _notification(int p_what);
 
+#ifdef WARNING_CAPTURE_ENABLED
 protected:
 	static void _bind_methods();
+#endif
 
 public:
 	void add_message(const String &p_msg, MessageType p_type = MSG_TYPE_STD);
@@ -189,11 +191,13 @@ public:
 
 	void clear();
 
+#ifdef WARNING_CAPTURE_ENABLED
 	// API methods for plugin access
 	void dump_messages_to_file(const String &p_path) const;
 	TypedArray<Dictionary> get_all_messages() const;
 	int get_error_count() const;
 	int get_warning_count() const;
+#endif
 
 	EditorLog();
 	~EditorLog();
